@@ -15,6 +15,7 @@ const Config = configpkg.Config;
 const BlockingQueue = @import("datastruct/main.zig").BlockingQueue;
 const renderer = @import("renderer.zig");
 const font = @import("font/main.zig");
+const aipkg = @import("ai/main.zig");
 
 const log = std.log.scoped(.app);
 
@@ -222,6 +223,36 @@ pub fn focusedSurface(self: *const App) ?*Surface {
     const surface = self.focused_surface orelse return null;
     if (!self.hasSurface(surface)) return null;
     return surface;
+}
+
+pub fn buildAgentHandoff(
+    self: *const App,
+    alloc: Allocator,
+    target: apprt.Target,
+    config: *const Config,
+    objective: []const u8,
+) !aipkg.types.AgentHandoff {
+    switch (target) {
+        .app => return error.SurfaceRequired,
+        .surface => |surface| if (!self.hasSurface(surface)) {
+            return error.InvalidSurfaceTarget;
+        },
+    }
+
+    return aipkg.Platform.buildHandoffForTarget(
+        alloc,
+        target,
+        config,
+        objective,
+        struct {
+            fn provide(
+                allocator: Allocator,
+                surface: *Surface,
+            ) Allocator.Error!aipkg.types.AISessionAwareness {
+                return surface.aiSessionAwareness(allocator);
+            }
+        }.provide,
+    );
 }
 
 /// Returns true if confirmation is needed to quit the app. It is up to

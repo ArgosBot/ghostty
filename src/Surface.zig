@@ -2089,6 +2089,20 @@ pub fn aiSessionAwareness(
     });
 }
 
+pub fn aiAgentHandoff(
+    self: *Surface,
+    alloc: Allocator,
+    config: *const configpkg.Config,
+    objective: []const u8,
+) !aipkg.types.AgentHandoff {
+    return self.app.buildAgentHandoff(
+        alloc,
+        .{ .surface = self },
+        config,
+        objective,
+    );
+}
+
 /// Resolves a relative file path to an absolute path using the terminal's pwd.
 fn resolvePathForOpening(
     self: *Surface,
