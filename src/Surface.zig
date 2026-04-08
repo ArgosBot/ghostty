@@ -29,6 +29,7 @@ const termio = @import("termio.zig");
 const font = @import("font/main.zig");
 const Command = @import("Command.zig");
 const terminal = @import("terminal/main.zig");
+const aipkg = @import("ai/main.zig");
 const configpkg = @import("config.zig");
 const Duration = configpkg.Config.Duration;
 const input = @import("input.zig");
@@ -2059,6 +2060,33 @@ pub fn pwd(
     defer self.renderer_state.mutex.unlock();
     const terminal_pwd = self.io.terminal.getPwd() orelse return null;
     return try alloc.dupe(u8, terminal_pwd);
+}
+
+/// Returns structured AI session awareness derived from stable surface state.
+/// Any duplicated string fields are allocated with `alloc`; callers own that
+/// memory and can release it with `AISessionAwareness.deinit`.
+pub fn aiSessionAwareness(
+    self: *const Surface,
+    alloc: Allocator,
+) Allocator.Error!aipkg.types.AISessionAwareness {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+
+    return aipkg.session_awareness.buildSessionAwareness(.{
+        .prompt_tracking = if (self.io.terminal.screens.active.semantic_prompt.seen)
+            .semantic
+        else
+            .unknown,
+        .at_prompt = self.io.terminal.cursorIsAtPrompt(),
+        .password_input = self.io.terminal.flags.password_input,
+        .working_directory = if (self.io.terminal.getPwd()) |terminal_pwd|
+            try alloc.dupe(u8, terminal_pwd)
+        else
+            null,
+        .last_command = null,
+        .last_exit_code = null,
+        .has_selection = self.io.terminal.screens.active.selection != null,
+    });
 }
 
 /// Resolves a relative file path to an absolute path using the terminal's pwd.
