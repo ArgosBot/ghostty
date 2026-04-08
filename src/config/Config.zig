@@ -32,6 +32,7 @@ const url = @import("url.zig");
 pub const Key = @import("key.zig").Key;
 const MetricModifier = fontpkg.Metrics.Modifier;
 const help_strings = @import("help_strings");
+const ai_types = @import("../ai/types.zig");
 pub const Command = @import("command.zig").Command;
 const RepeatableReadableIO = @import("io.zig").RepeatableReadableIO;
 const RepeatableStringMap = @import("RepeatableStringMap.zig");
@@ -2796,6 +2797,39 @@ keybind: Keybinds = .{},
 ///
 /// The default value is `detect`.
 @"shell-integration": ShellIntegration = .detect,
+
+/// Enable AI features.
+@"ai-enabled": bool = false,
+
+/// Controls the default AI agent execution posture Ghostty hands off to the
+/// runtime.
+///
+/// Allowable values are:
+///
+///   * `review_before_execute` - the runtime should stop for interactive review
+///     before executing agent-proposed commands.
+///
+///   * `auto_execute_trusted` - the runtime may auto-execute eligible commands,
+///     but only if `ai-agent-auto-execute` is also enabled.
+///
+/// This key defines the posture. `ai-agent-auto-execute` is an additional
+/// allowance gate and does not override an explicit
+/// `review_before_execute` posture. In other words, trusted auto execution
+/// should only happen when both this key is `auto_execute_trusted` and
+/// `ai-agent-auto-execute` is `true`.
+///
+/// The default value is `review_before_execute`.
+@"ai-agent-handoff-mode": ai_types.AgentExecutionMode = .review_before_execute,
+
+/// Enables the additional allowance required for trusted AI agent auto
+/// execution.
+///
+/// This key is only meaningful when the runtime is evaluating trusted auto
+/// execution. It does not change `ai-agent-handoff-mode`, and by itself should
+/// not skip review. Runtime behavior should require both
+/// `ai-agent-handoff-mode=auto_execute_trusted` and
+/// `ai-agent-auto-execute=true` before bypassing interactive review.
+@"ai-agent-auto-execute": bool = false,
 
 /// Shell integration features to enable. These require our shell integration
 /// to be loaded, either automatically via shell-integration or manually.
@@ -10884,4 +10918,110 @@ test "compatibility: window new-window" {
             cfg.@"macos-dock-drop-behavior",
         );
     }
+}
+
+test "parse ai-enabled: true" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+    var it: TestIterator = .{ .data = &.{
+        "--ai-enabled=true",
+    } };
+    try cfg.loadIter(alloc, &it);
+
+    try testing.expect(cfg._diagnostics.empty());
+    try testing.expectEqual(true, cfg.@"ai-enabled");
+}
+
+test "parse ai-agent-handoff-mode: review_before_execute" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+    var it: TestIterator = .{ .data = &.{
+        "--ai-agent-handoff-mode=review_before_execute",
+    } };
+    try cfg.loadIter(alloc, &it);
+
+    try testing.expect(cfg._diagnostics.empty());
+    try testing.expectEqual(
+        ai_types.AgentExecutionMode.review_before_execute,
+        cfg.@"ai-agent-handoff-mode",
+    );
+}
+
+test "parse ai-agent-handoff-mode: auto_execute_trusted" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+    var it: TestIterator = .{ .data = &.{
+        "--ai-agent-handoff-mode=auto_execute_trusted",
+    } };
+    try cfg.loadIter(alloc, &it);
+
+    try testing.expect(cfg._diagnostics.empty());
+    try testing.expectEqual(
+        ai_types.AgentExecutionMode.auto_execute_trusted,
+        cfg.@"ai-agent-handoff-mode",
+    );
+}
+
+test "parse ai-agent-handoff-mode: invalid rejected cleanly" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+    var it: TestIterator = .{ .data = &.{
+        "--ai-agent-handoff-mode=ship_it",
+    } };
+    try cfg.loadIter(alloc, &it);
+
+    try testing.expectEqual(@as(usize, 1), cfg._diagnostics.items().len);
+    const diag = cfg._diagnostics.items()[0];
+    try testing.expectEqualStrings("ai-agent-handoff-mode", diag.key);
+    try testing.expectEqualStrings(
+        "invalid value \"ship_it\", valid values are: review_before_execute, auto_execute_trusted",
+        diag.message,
+    );
+}
+
+test "parse ai-agent-auto-execute: true" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+    var it: TestIterator = .{ .data = &.{
+        "--ai-agent-auto-execute=true",
+    } };
+    try cfg.loadIter(alloc, &it);
+
+    try testing.expect(cfg._diagnostics.empty());
+    try testing.expectEqual(true, cfg.@"ai-agent-auto-execute");
+}
+
+test "parse ai-agent execution config: review posture is not overridden by auto-execute gate" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+    var it: TestIterator = .{ .data = &.{
+        "--ai-agent-handoff-mode=review_before_execute",
+        "--ai-agent-auto-execute=true",
+    } };
+    try cfg.loadIter(alloc, &it);
+
+    try testing.expect(cfg._diagnostics.empty());
+    try testing.expectEqual(
+        ai_types.AgentExecutionMode.review_before_execute,
+        cfg.@"ai-agent-handoff-mode",
+    );
+    try testing.expectEqual(true, cfg.@"ai-agent-auto-execute");
 }
