@@ -12,6 +12,8 @@ const entrypoint = switch (build_config.exe_entrypoint) {
     .webgen_commands => @import("build/webgen/main_commands.zig"),
 };
 
+pub const ai = @import("ai/main.zig");
+
 /// The main entrypoint for the program.
 pub const main = entrypoint.main;
 
@@ -23,4 +25,5 @@ else
 
 test {
     _ = entrypoint;
+    _ = ai;
 }
