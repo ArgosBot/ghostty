@@ -36,7 +36,7 @@ This section defines the target interaction model for the initial assistant expe
 
 ### 2.1 First-Release Surfaces
 
-The first release includes four primary surfaces: a side panel, a compact inline assistant overlay, command palette actions, and a review buffer editor. It does not include autonomous background agents or invisible execution flows.
+The first release includes five primary surfaces: a side panel, a compact inline assistant overlay, command palette actions, a review buffer editor, and an explicit handoff flow that transfers the active terminal session to an agent. It does not include invisible execution flows.
 
 ## 3. Shared UX Model
 
@@ -72,6 +72,7 @@ This section defines the initial user-facing actions.
 | `ai:explain_selection` | surface | Captures selection and opens explain flow |
 | `ai:summarize_viewport` | surface | Captures visible content and opens summarize flow |
 | `ai:propose_command` | surface | Starts a proposal-first workflow for the current terminal state |
+| `ai:handoff_to_agent` | surface | Starts an execution-oriented agent handoff bound to the current surface |
 | `ai:retry_last` | surface | Replays the last request with the same editable review state |
 
 ## 4. Implementation Details
@@ -121,15 +122,39 @@ The GTK implementation mirrors the shared state machine while remaining idiomati
 
 This section defines discoverability and invocation paths.
 
-Assistant actions are registered as keybinding actions in `src/input/Binding.zig`, surfaced as command names in `src/input/command.zig`, and included in command palette sources for both runtimes. Default shortcuts are conservative and disabled unless `ai-enabled` is true.
+Assistant actions are registered as keybinding actions in `src/input/Binding.zig`, surfaced as command names in `src/input/command.zig`, and included in command palette sources for both runtimes. Default shortcuts are conservative and disabled unless `ai-enabled` is true. The command palette must expose a Warp-like `Hand Off to Agent` action that immediately seeds the agent with the current surface, working directory, and recent command context.
 
 ## 5. Human-in-the-Loop Editing
 
-This section defines the review buffer behavior.
+This section defines the review buffer and handoff behavior.
 
 The review buffer is the default staging area between context capture and network send. It shows the prompt, captured context summary, applied redactions, and any warnings from RFC-004. Users can edit prompt and context text before submission and can copy assistant output into the terminal, clipboard, or a scratch editor without immediate execution.
 
-### 5.1 Review Buffer States
+### 5.1 Agent Handoff Flow
+
+This section defines the UX for explicit handoff into an active agent.
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ Hand Off to Agent                                             │
+│                                                               │
+│ Current session                                                │
+│  • Surface: build tab                                          │
+│  • Working directory: /repo                                    │
+│  • Last command: zig build test                                │
+│  • Status: failed (exit 1)                                     │
+│                                                               │
+│ Agent execution mode                                           │
+│  (•) Review before execute                                     │
+│  ( ) Auto-execute trusted commands                             │
+│                                                               │
+│ [Start Agent] [Cancel]                                         │
+└──────────────────────────────────────────────────────────────┘
+```
+
+The handoff flow must make session awareness visible so the user can verify that the agent is starting in the expected place. If the active session cannot be resolved, the handoff action is disabled instead of falling back to guesswork.
+
+### 5.2 Review Buffer States
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
@@ -146,7 +171,7 @@ The review buffer is the default staging area between context capture and networ
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### 5.2 Output Actions
+### 5.3 Output Actions
 
 This section defines the initial output affordances.
 
@@ -164,6 +189,7 @@ This section defines the main user-facing UX failures.
 | Scenario | Detection | Recovery |
 |----------|-----------|----------|
 | Panel opens with no active surface | Window controller lacks focused surface | Show empty state and disable context-bound actions |
+| Handoff is requested but session awareness is incomplete | Surface metadata lacks cwd or stable prompt state | Disable auto mode, fall back to review mode, and show the missing context |
 | Review buffer cannot render current context | Shared state build fails or data is missing | Show error banner, allow retry, and preserve user prompt text |
 | Streaming result is interrupted | `AIStreamEvent.failed` or `cancelled` | Keep partial output visible with retry affordance |
 | User switches surface mid-request | Focus change invalidates bound target | Keep the request pinned to its original surface and clearly label it |
@@ -199,6 +225,7 @@ This section defines minimum UI coverage.
 
 | # | Question | Decision |
 |---|----------|----------|
-| 1 | What is the primary UX surface? | **A window-scoped assistant panel with a review buffer.** This gives enough space for transparent, editable workflows. |
+| 1 | What is the primary UX surface? | **A window-scoped assistant panel with a review buffer and explicit handoff entrypoint.** This gives enough space for transparent, editable workflows and execution mode selection. |
 | 2 | How are quick actions exposed? | **Through command palette entries and keybindings backed by shared actions.** This fits Ghostty’s existing interaction model. |
-| 3 | Does assistant output auto-run or auto-insert? | **No.** Output remains user-controlled and execution is delegated to RFC-003 approval flows. |
+| 3 | Must the UI support handing control to the agent with or without per-command permission prompts? | **Yes.** The handoff UI exposes both review mode and trusted auto mode when policy allows it. |
+| 4 | Does assistant output auto-run or auto-insert? | **Not by default.** Output remains user-controlled and execution is delegated to RFC-003 handoff and approval flows. |

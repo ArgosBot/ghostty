@@ -10,7 +10,7 @@
 
 ## 1. Motivation
 
-The quality of an AI terminal assistant depends on context, but raw terminal history is noisy, expensive, and vulnerable to prompt injection. Ghostty already exposes high-value signals such as selection, visible terminal content, semantic prompts, working directory updates through OSC 7, and shell integration state. This RFC defines the trusted context pipeline, PTY-adjacent capture strategy, context budgeting, and prompt-injection defenses that make AI features useful without allowing terminal output to silently rewrite system instructions.
+The quality of an AI terminal assistant depends on context, but raw terminal history is noisy, expensive, and vulnerable to prompt injection. Ghostty already exposes high-value signals such as selection, visible terminal content, semantic prompts, working directory updates through OSC 7, and shell integration state. This RFC defines the trusted context pipeline, PTY-adjacent capture strategy, ambient session awareness, context budgeting, and prompt-injection defenses that make AI features useful without allowing terminal output to silently rewrite system instructions.
 
 ## 2. Context Architecture Overview
 
@@ -85,11 +85,32 @@ This section defines the API that builds bounded context.
 pub const AIContextBroker = struct {
     pub fn captureSelection(self: *AIContextBroker, surface: *Surface) !AIContextEnvelope;
     pub fn captureViewport(self: *AIContextBroker, surface: *Surface) !AIContextEnvelope;
+    pub fn captureSessionAwareness(
+        self: *AIContextBroker,
+        surface: *Surface,
+    ) !AISessionAwareness;
     pub fn captureReviewContext(
         self: *AIContextBroker,
         surface: *Surface,
         options: CaptureOptions,
     ) !AIContextEnvelope;
+};
+
+pub const AISessionAwareness = struct {
+    surface_id: u64,
+    cwd: ?[]const u8,
+    shell_program: ?[]const u8,
+    prompt_state: PromptState,
+    last_command: ?[]const u8,
+    last_exit_code: ?i32,
+    active_selection_present: bool,
+
+    pub const PromptState = enum {
+        unknown,
+        at_prompt,
+        command_running,
+        password_input,
+    };
 };
 ```
 
@@ -139,7 +160,23 @@ This section defines capture precedence.
 | 5 | Scrollback | Included only after review and bounded by `ContextBudget` |
 | 6 | Environment | Excluded by default and opt-in only |
 
-### 4.5 PTY and Latency Constraints
+### 4.5 Ambient Session Awareness
+
+This section defines how the agent knows where it is without scraping the entire terminal transcript.
+
+Session awareness is a separate structured object, `AISessionAwareness`, that is always preferred over heuristic inference from raw output. It is assembled from existing Ghostty signals in the following order:
+
+| Signal | Source | Usage |
+|--------|--------|-------|
+| Current working directory | OSC 7 handling in `src/terminal/osc.zig` and surface state | Primary working-directory truth |
+| Prompt state | Semantic prompt handling in `src/terminal/Screen.zig` and `src/Surface.zig` | Distinguishes idle prompt from running command |
+| Last command boundary | Shell integration and semantic prompt segmentation | Gives the agent the most recent command context |
+| Last exit code | Shell integration metadata when available | Helps the agent reason about failures without reading full scrollback |
+| Selection presence | Surface selection state | Allows the agent to know whether the user explicitly highlighted context |
+
+The agent runtime defined in RFC-003 consumes `AISessionAwareness` on every handoff so it can continue operating in the correct terminal surface and directory.
+
+### 4.6 PTY and Latency Constraints
 
 This section defines what context capture must not do.
 
@@ -194,6 +231,7 @@ This section defines the minimum automated coverage.
 | Prompt-injection guards | `zig build test -Dtest-filter=prompt-guard` | Boundary serialization and warning generation |
 | OSC integration | `zig build test -Dtest-filter=osc` | OSC 7 and semantic prompt capture correctness |
 | Formatter integration | `zig build test -Dtest-filter=formatter` | Bounded export from screen slices |
+| Session awareness | `zig build test -Dtest-filter=session-awareness` | Prompt-state, cwd, and last-command extraction |
 
 ## 9. Alternatives Considered
 
@@ -208,5 +246,6 @@ This section defines the minimum automated coverage.
 | # | Question | Decision |
 |---|----------|----------|
 | 1 | What is the primary trusted context source? | **Explicit user selection, followed by bounded viewport and semantic prompt slices.** This preserves user intent and keeps context concise. |
-| 2 | How is terminal output represented to the model? | **As explicitly untrusted content.** Policy and system instructions are serialized separately. |
-| 3 | Can scrollback be included automatically? | **No.** Scrollback remains review-gated and policy-controlled because of privacy and injection risk. |
+| 2 | How does the agent know where it currently is? | **Through structured session awareness derived from cwd, prompt state, and recent command metadata.** This is safer and more reliable than inferring state from raw text alone. |
+| 3 | How is terminal output represented to the model? | **As explicitly untrusted content.** Policy and system instructions are serialized separately. |
+| 4 | Can scrollback be included automatically? | **No.** Scrollback remains review-gated and policy-controlled because of privacy and injection risk. |

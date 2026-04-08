@@ -20,9 +20,9 @@ This section defines the complete RFC set and the responsibility boundary of eac
 |-----|-------|---------|---------------|
 | RFC-001 | AI Platform Core and Provider Abstraction | Shared AI runtime, jobs, streaming, provider abstraction, OpenRouter-first transport | `src/ai/`, `src/App.zig`, `src/Surface.zig`, `src/apprt/action.zig` |
 | RFC-002 | AI Auth, Secrets, Privacy, and Policy Controls | API keys, config, redaction, consent, network and data policy | `src/config/Config.zig`, `src/config/file_load.zig`, runtime-specific secret storage |
-| RFC-003 | Agent Runtime, Tooling Contract, and Approval Model | Structured tools, command execution proposals, approval checkpoints, agent lifecycle | `src/ai/agent/`, `src/termio/`, runtime action plumbing |
-| RFC-004 | Terminal Context, Shell/PTY Integration, and Prompt-Injection Defenses | Context capture, semantic prompts, OSC 7, selection/scrollback policy, injection resistance | `src/Surface.zig`, `src/terminal/`, `src/shell-integration/` |
-| RFC-005 | UX Surfaces, Interaction Design, and Human-in-the-Loop Editing | AI panel, inline assistant, command palette actions, review/edit flows on macOS and GTK | `macos/Sources/Features/AI/`, `src/apprt/gtk/class/` |
+| RFC-003 | Agent Runtime, Tooling Contract, and Approval Model | Structured tools, handoff-to-agent execution, approval checkpoints, autonomous session lifecycle | `src/ai/agent/`, `src/termio/`, runtime action plumbing |
+| RFC-004 | Terminal Context, Shell/PTY Integration, and Prompt-Injection Defenses | Ambient terminal awareness, semantic prompts, OSC 7, selection/scrollback policy, injection resistance | `src/Surface.zig`, `src/terminal/`, `src/shell-integration/` |
+| RFC-005 | UX Surfaces, Interaction Design, and Human-in-the-Loop Editing | AI panel, inline assistant, command palette actions, handoff flows, review/edit flows on macOS and GTK | `macos/Sources/Features/AI/`, `src/apprt/gtk/class/` |
 | RFC-006 | Observability, Packaging, Release Strategy, and Rollout Governance | Telemetry, diagnostics, offline packaging, test matrix, staged rollout, operability | build/test/docs/release pipeline |
 
 ## 3. Dependency Graph
@@ -57,7 +57,9 @@ This section defines canonical terminology used across the RFC set.
 | AI Platform | The shared orchestration layer that handles requests, jobs, streaming, provider selection, and policy enforcement. |
 | Provider | A model backend implementation behind a stable interface, such as OpenRouter. |
 | Agent Session | A multi-step AI workflow that can inspect context, propose actions, and request approvals. |
+| Agent Handoff | An explicit transition from assistant mode into execution mode where the agent continues operating in the current terminal session. |
 | Context Envelope | A bounded, structured bundle of terminal-derived context attached to a request. |
+| Session Awareness | The agent's structured knowledge of the active surface, working directory, semantic prompt state, and recent command/result context. |
 | Approval Gate | A mandatory user confirmation checkpoint before a sensitive action occurs. |
 | Tool Invocation | A structured request from the model to use a local capability, such as proposing a command. |
 | Review Buffer | An editable output artifact that the user can inspect before insertion or execution. |
@@ -119,4 +121,4 @@ This section lists the RFC documents created in this fork.
 |---|----------|----------|
 | 1 | How many RFCs are required for a production-ready AI fork? | **Six implementation RFCs plus this overview.** This is the smallest set that isolates core runtime, policy, context, UX, agent execution, and operability. |
 | 2 | Which provider is the first-class initial backend? | **OpenRouter is the first production provider.** The runtime remains provider-agnostic so future backends can be added without redesign. |
-| 3 | Should AI execution features launch at the same time as assistant UI? | **No.** Non-executing assistant features ship before agent execution so policy and trust boundaries can mature first. |
+| 3 | Must the product support Warp-like handoff into an executing agent that already knows the current session? | **Yes.** The design explicitly includes an execution-mode handoff backed by structured session awareness and configurable approval policy. |

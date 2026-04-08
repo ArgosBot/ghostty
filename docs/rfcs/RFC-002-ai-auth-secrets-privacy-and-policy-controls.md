@@ -144,6 +144,8 @@ This section defines the new user-facing configuration surface.
 | `ai-consent-scrollback` | `deny` | Permission for historical terminal output |
 | `ai-consent-cwd` | `ask` | Permission for current working directory |
 | `ai-consent-environment` | `deny` | Permission for environment variables |
+| `ai-agent-handoff-mode` | `review_before_execute` | Default agent execution posture |
+| `ai-agent-auto-execute` | `false` | Enables trusted auto execution for eligible commands |
 | `ai-require-review-before-send` | `true` | Forces review buffer before provider submission |
 | `ai-max-context-bytes` | `32768` | Hard maximum serialized context size |
 | `ai-redaction-rule` | empty | Repeatable redaction rules |

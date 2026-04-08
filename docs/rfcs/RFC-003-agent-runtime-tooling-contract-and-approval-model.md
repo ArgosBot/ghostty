@@ -10,7 +10,7 @@
 
 ## 1. Motivation
 
-A chat-style assistant becomes meaningfully more useful when it can propose, stage, and optionally execute structured terminal actions. That same capability also creates the largest safety risk in an AI-enabled terminal. This RFC defines a constrained agent runtime with structured tools, mandatory approval gates, deterministic command proposals, and auditable execution state so Ghostty can support agent workflows without sacrificing trust.
+A chat-style assistant becomes meaningfully more useful when it can receive an explicit handoff, understand the current terminal session, and then propose, stage, and optionally execute structured terminal actions. That same capability also creates the largest safety risk in an AI-enabled terminal. This RFC defines a constrained agent runtime with structured tools, configurable approval gates, deterministic command proposals, ambient session awareness, and auditable execution state so Ghostty can support Warp-like agent workflows without sacrificing trust.
 
 ## 2. Agent Runtime Overview
 
@@ -35,7 +35,7 @@ This section defines the lifecycle of an agent session.
 
 ### 2.1 Scope
 
-The initial agent runtime supports proposal-first shell workflows. It does not permit arbitrary filesystem mutation, package installation, or background service management without explicit future tool definitions.
+The initial agent runtime supports explicit handoff into shell workflows that remain bound to the active terminal surface and working directory. It supports both approval-gated execution and an optional trusted auto-execute mode controlled by RFC-002 policy. It does not permit arbitrary filesystem mutation, package installation, or background service management without explicit future tool definitions.
 
 ## 3. Shared Types and Protocols
 
@@ -72,6 +72,11 @@ pub const ProposedCommand = struct {
     };
 };
 
+pub const AgentExecutionMode = enum {
+    review_before_execute,
+    auto_execute_trusted,
+};
+
 pub const ApprovalDecision = enum {
     approve_once,
     approve_session,
@@ -85,8 +90,14 @@ pub const PendingApproval = struct {
     summary: []const u8,
 };
 
+pub const AgentHandoff = struct {
+    mode: AgentExecutionMode,
+    awareness: AISessionAwareness,
+    objective: []const u8,
+};
+
 pub const AgentRuntime = struct {
-    pub fn start(self: *AgentRuntime, request: AIRequest) !AgentSessionID;
+    pub fn start(self: *AgentRuntime, request: AIRequest, handoff: AgentHandoff) !AgentSessionID;
     pub fn respondApproval(
         self: *AgentRuntime,
         approval: PendingApproval,
@@ -125,9 +136,14 @@ This section defines the implementation shape of the agent runtime.
 | `src/apprt/action.zig` | Add approval and execution actions |
 | `src/input/Binding.zig` | Add start-agent and approve/deny actions |
 
-### 4.3 Approval Gates
+### 4.3 Handoff Modes and Approval Gates
 
-This section defines when the user must intervene.
+This section defines how the user hands work off to the agent and when the user must intervene.
+
+| Handoff Mode | Behavior | Intended Use |
+|--------------|----------|--------------|
+| `review_before_execute` | The agent can inspect context and propose commands, but every command execution is review-gated | Default production mode |
+| `auto_execute_trusted` | The agent can execute low-risk and medium-risk commands without per-command approval when RFC-002 policy explicitly allows it | Trusted personal environments and power users |
 
 | Tool | Approval Required | Notes |
 |------|-------------------|-------|
@@ -135,17 +151,19 @@ This section defines when the user must intervene.
 | `write_review_buffer` | No | Writes only to the local editable review buffer |
 | `copy_to_clipboard` | Ask by default | Clipboard mutation is user-visible and can be sensitive |
 | `propose_command` | No | Proposal generation is non-executing |
-| `run_approved_command` | Always | Every execution must be tied to a visible `PendingApproval` |
+| `run_approved_command` | Always in `review_before_execute`; policy-driven in `auto_execute_trusted` | High-risk commands always require explicit approval |
 
 ### 4.4 Command Execution Rules
 
 This section defines the execution constraints.
 
-1. The model may only execute a command that was previously normalized into a `ProposedCommand` and displayed to the user.
-2. The user may edit the command before approval; edited commands become a new reviewed proposal.
-3. Session approval does not bypass high-risk commands. Commands classified as `high` always require one-time confirmation.
-4. No hidden environment overrides are allowed. Every override must be listed in the approval view.
-5. Background execution is out of scope for the first implementation.
+1. Every agent session begins with an explicit `AgentHandoff` that binds the agent to the current surface, working directory, and prompt state.
+2. In `review_before_execute`, the model may only execute a command that was previously normalized into a `ProposedCommand` and displayed to the user.
+3. In `auto_execute_trusted`, low-risk and medium-risk commands may execute without per-command approval only when policy explicitly allows the handoff mode for the active profile.
+4. The user may edit any command before approval; edited commands become a new reviewed proposal.
+5. Session approval does not bypass high-risk commands. Commands classified as `high` always require one-time confirmation.
+6. No hidden environment overrides are allowed. Every override must be listed in the approval view.
+7. Background execution is out of scope for the first implementation.
 
 ### 4.5 Risk Classification
 
@@ -156,11 +174,25 @@ This section defines the initial risk model.
 | Contains shell metacharacter chaining (`&&`, `||`, `;`) | Upgrade to at least `medium` |
 | Redirects to file (`>`, `>>`) | Upgrade to at least `medium` |
 | Uses recursive deletion, system package management, privilege escalation, or network download execution | Upgrade to `high` |
+| Leaves the current working directory or targets a different path than the handoff surface | Upgrade to at least `medium` |
 | Targets current working directory only with a read-only command | Eligible for `low` |
 
 ## 5. User Experience
 
-This section defines the review and approval flow.
+This section defines the handoff, review, and approval flows.
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ Hand off to Agent                                            │
+│                                                              │
+│ Objective: Fix the failing build in this repo                │
+│ Surface: current tab                                         │
+│ Working directory: /repo                                     │
+│ Agent mode: Review Before Execute                            │
+│                                                              │
+│ [Start Agent] [Start in Auto Mode] [Cancel]                  │
+└──────────────────────────────────────────────────────────────┘
+```
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
@@ -175,7 +207,7 @@ This section defines the review and approval flow.
 └──────────────────────────────────────────────────────────────┘
 ```
 
-The agent never writes directly into the terminal input buffer without user-visible review. The user can accept insertion without execution, execute once, or deny.
+The agent never writes directly into the terminal input buffer without user-visible review. The user can accept insertion without execution, execute once, deny, or explicitly hand work off in a trusted auto-execute mode when local policy allows it.
 
 ## 6. Error Handling
 
@@ -219,6 +251,7 @@ This section defines the minimum coverage for the agent runtime.
 
 | # | Question | Decision |
 |---|----------|----------|
-| 1 | Is the first agent release proposal-first or execution-first? | **Proposal-first.** Execution is allowed only after explicit review and approval. |
-| 2 | Can session approval bypass all future prompts? | **No.** High-risk commands always require one-time confirmation. |
-| 3 | What is the source of truth for tool safety? | **Local validation and policy gates inside Ghostty.** Model intent alone never authorizes execution. |
+| 1 | Must the product support explicit handoff into an executing agent in the current terminal session? | **Yes.** Agent sessions start from a structured handoff bound to the active surface and working directory. |
+| 2 | Is the first execution model approval-only or does it support optional auto mode? | **Both.** `review_before_execute` is the default, and `auto_execute_trusted` exists only behind explicit policy opt-in. |
+| 3 | Can session approval bypass all future prompts? | **No.** High-risk commands always require one-time confirmation. |
+| 4 | What is the source of truth for tool safety? | **Local validation and policy gates inside Ghostty.** Model intent alone never authorizes execution. |
