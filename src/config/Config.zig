@@ -2818,8 +2818,8 @@ keybind: Keybinds = .{},
 /// should only happen when both this key is `auto_execute_trusted` and
 /// `ai-agent-auto-execute` is `true`.
 ///
-/// The default value is `review_before_execute`.
-@"ai-agent-handoff-mode": ai_types.AgentExecutionMode = .review_before_execute,
+/// The default value is `auto_execute_trusted`.
+@"ai-agent-handoff-mode": ai_types.AgentExecutionMode = .auto_execute_trusted,
 
 /// Enables the additional allowance required for trusted AI agent auto
 /// execution.
@@ -2829,7 +2829,9 @@ keybind: Keybinds = .{},
 /// not skip review. Runtime behavior should require both
 /// `ai-agent-handoff-mode=auto_execute_trusted` and
 /// `ai-agent-auto-execute=true` before bypassing interactive review.
-@"ai-agent-auto-execute": bool = false,
+///
+/// The default value is `true`.
+@"ai-agent-auto-execute": bool = true,
 
 /// Shell integration features to enable. These require our shell integration
 /// to be loaded, either automatically via shell-integration or manually.
@@ -10935,6 +10937,19 @@ test "parse ai-enabled: true" {
     try testing.expectEqual(true, cfg.@"ai-enabled");
 }
 
+test "default ai-agent-handoff-mode: auto_execute_trusted" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+
+    try testing.expectEqual(
+        ai_types.AgentExecutionMode.auto_execute_trusted,
+        cfg.@"ai-agent-handoff-mode",
+    );
+}
+
 test "parse ai-agent-handoff-mode: review_before_execute" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -10989,6 +11004,16 @@ test "parse ai-agent-handoff-mode: invalid rejected cleanly" {
         "invalid value \"ship_it\", valid values are: review_before_execute, auto_execute_trusted",
         diag.message,
     );
+}
+
+test "default ai-agent-auto-execute: true" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+
+    try testing.expectEqual(true, cfg.@"ai-agent-auto-execute");
 }
 
 test "parse ai-agent-auto-execute: true" {
