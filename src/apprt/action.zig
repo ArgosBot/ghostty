@@ -343,6 +343,18 @@ pub const Action = union(Key) {
     /// otherwise the terminal-set title.
     copy_title_to_clipboard,
 
+    /// Open the AI panel.
+    ai_open_panel,
+
+    /// Close the AI panel.
+    ai_close_panel,
+
+    /// Handoff the current session to an AI agent.
+    ai_handoff_to_agent,
+
+    /// Retry the last AI action.
+    ai_retry_last,
+
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
         quit,
@@ -410,6 +422,10 @@ pub const Action = union(Key) {
         search_selected,
         readonly,
         copy_title_to_clipboard,
+        ai_open_panel,
+        ai_close_panel,
+        ai_handoff_to_agent,
+        ai_retry_last,
 
         test "ghostty.h Action.Key" {
             try lib.checkGhosttyHEnum(Key, "GHOSTTY_ACTION_");
@@ -1001,6 +1017,26 @@ pub const SearchSelected = struct {
         };
     }
 };
+
+test "ghostty.h Action.Key AI actions appended" {
+    const enum_fields = @typeInfo(Action.Key).@"enum".fields;
+    try std.testing.expectEqualStrings("copy_title_to_clipboard", enum_fields[enum_fields.len - 5].name);
+    try std.testing.expect(std.meta.stringToEnum(Action.Key, "ai_open_panel") != null);
+    try std.testing.expect(std.meta.stringToEnum(Action.Key, "ai_close_panel") != null);
+    try std.testing.expect(std.meta.stringToEnum(Action.Key, "ai_handoff_to_agent") != null);
+    try std.testing.expect(std.meta.stringToEnum(Action.Key, "ai_retry_last") != null);
+    try std.testing.expectEqualStrings("ai_open_panel", enum_fields[enum_fields.len - 4].name);
+    try std.testing.expectEqualStrings("ai_close_panel", enum_fields[enum_fields.len - 3].name);
+    try std.testing.expectEqualStrings("ai_handoff_to_agent", enum_fields[enum_fields.len - 2].name);
+    try std.testing.expectEqualStrings("ai_retry_last", enum_fields[enum_fields.len - 1].name);
+}
+
+test "ghostty.h Action AI actions are void" {
+    try std.testing.expect(Action.Value(.ai_open_panel) == void);
+    try std.testing.expect(Action.Value(.ai_close_panel) == void);
+    try std.testing.expect(Action.Value(.ai_handoff_to_agent) == void);
+    try std.testing.expect(Action.Value(.ai_retry_last) == void);
+}
 
 test {
     _ = std.testing.refAllDeclsRecursive(@This());
