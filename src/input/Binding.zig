@@ -757,6 +757,18 @@ pub const Action = union(enum) {
     /// version can be found by running `ghostty +version`.
     toggle_command_palette,
 
+    /// Open the AI panel for the current terminal surface.
+    @"ai:open_panel",
+
+    /// Handoff the current terminal session to an AI agent.
+    @"ai:handoff_to_agent",
+
+    /// Ask AI to propose a command for the current terminal session.
+    @"ai:propose_command",
+
+    /// Retry the last AI request for the current terminal session.
+    @"ai:retry_last",
+
     /// Toggle the quick terminal.
     ///
     /// The quick terminal, also known as the "Quake-style" or drop-down
@@ -1215,28 +1227,25 @@ pub const Action = union(enum) {
     /// action name and value is the action parameter. The parameter
     /// is optional depending on the action.
     pub fn parse(input: []const u8) !Action {
-        // Split our action by colon. A colon may not exist for some
-        // actions so it is optional. The part preceding the colon is the
-        // action name.
-        const colonIdx = std.mem.indexOf(u8, input, ":");
-        const action = input[0..(colonIdx orelse input.len)];
-
-        // An action name is always required
-        if (action.len == 0) return Error.InvalidFormat;
+        if (input.len == 0) return Error.InvalidFormat;
 
         const actionInfo = @typeInfo(Action).@"union";
         inline for (actionInfo.fields) |field| {
-            if (std.mem.eql(u8, action, field.name)) {
+            const exact = std.mem.eql(u8, input, field.name);
+            const has_param = std.mem.startsWith(u8, input, field.name) and
+                input.len > field.name.len and
+                input[field.name.len] == ':';
+            if (exact or has_param) {
                 // If the field type is void we expect no value
                 switch (field.type) {
                     void => {
-                        if (colonIdx != null) return Error.InvalidFormat;
+                        if (!exact) return Error.InvalidFormat;
                         return @unionInit(Action, field.name, {});
                     },
 
                     []const u8 => {
-                        const idx = colonIdx orelse return Error.InvalidFormat;
-                        const param = input[idx + 1 ..];
+                        if (!has_param) return Error.InvalidFormat;
+                        const param = input[field.name.len + 1 ..];
                         return @unionInit(Action, field.name, param);
                     },
 
@@ -1247,7 +1256,7 @@ pub const Action = union(enum) {
                         // Get the parameter after the colon. The parameter
                         // can be optional for action types that can have a
                         // "default" decl.
-                        const idx = colonIdx orelse {
+                        if (exact) {
                             switch (@typeInfo(field.type)) {
                                 .@"struct",
                                 .@"union",
@@ -1264,9 +1273,9 @@ pub const Action = union(enum) {
                             }
 
                             return Error.InvalidFormat;
-                        };
+                        }
 
-                        const param = input[idx + 1 ..];
+                        const param = input[field.name.len + 1 ..];
                         return @unionInit(
                             Action,
                             field.name,
@@ -1361,6 +1370,10 @@ pub const Action = union(enum) {
             .toggle_secure_input,
             .toggle_mouse_reporting,
             .toggle_command_palette,
+            .@"ai:open_panel",
+            .@"ai:handoff_to_agent",
+            .@"ai:propose_command",
+            .@"ai:retry_last",
             .toggle_background_opacity,
             .show_on_screen_keyboard,
             .reset_window_size,
@@ -3287,6 +3300,35 @@ test "parse: action no parameters" {
         try parseSingle("a=ignore"),
     );
     try testing.expectError(Error.InvalidFormat, parseSingle("a=ignore:A"));
+
+    try testing.expectEqual(
+        Binding{
+            .trigger = .{ .key = .{ .unicode = 'a' } },
+            .action = .{ .@"ai:open_panel" = {} },
+        },
+        try parseSingle("a=ai:open_panel"),
+    );
+    try testing.expectEqual(
+        Binding{
+            .trigger = .{ .key = .{ .unicode = 'a' } },
+            .action = .{ .@"ai:handoff_to_agent" = {} },
+        },
+        try parseSingle("a=ai:handoff_to_agent"),
+    );
+    try testing.expectEqual(
+        Binding{
+            .trigger = .{ .key = .{ .unicode = 'a' } },
+            .action = .{ .@"ai:propose_command" = {} },
+        },
+        try parseSingle("a=ai:propose_command"),
+    );
+    try testing.expectEqual(
+        Binding{
+            .trigger = .{ .key = .{ .unicode = 'a' } },
+            .action = .{ .@"ai:retry_last" = {} },
+        },
+        try parseSingle("a=ai:retry_last"),
+    );
 }
 
 test "parse: action with string" {

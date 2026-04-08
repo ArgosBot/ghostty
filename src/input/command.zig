@@ -645,6 +645,30 @@ fn actionCommands(action: Action.Key) []const Command {
             .description = "Toggle whether mouse events are reported to terminal applications.",
         }},
 
+        .@"ai:open_panel" => comptime &.{.{
+            .action = .@"ai:open_panel",
+            .title = "Open AI Panel",
+            .description = "Open the AI panel for the current terminal session.",
+        }},
+
+        .@"ai:handoff_to_agent" => comptime &.{.{
+            .action = .@"ai:handoff_to_agent",
+            .title = "Handoff to AI Agent",
+            .description = "Handoff the current terminal session to an AI agent.",
+        }},
+
+        .@"ai:propose_command" => comptime &.{.{
+            .action = .@"ai:propose_command",
+            .title = "Ask AI to Propose Command",
+            .description = "Ask AI to propose a command for the current terminal session.",
+        }},
+
+        .@"ai:retry_last" => comptime &.{.{
+            .action = .@"ai:retry_last",
+            .title = "Retry Last AI Request",
+            .description = "Retry the last AI request for the current terminal session.",
+        }},
+
         .toggle_background_opacity => comptime &.{.{
             .action = .toggle_background_opacity,
             .title = "Toggle Background Opacity",
@@ -736,4 +760,13 @@ test "command defaults" {
     const testing = std.testing;
     try testing.expect(defaults.len > 0);
     try testing.expectEqual(defaults.len, defaultsC.len);
+}
+
+test "command defaults include ai actions" {
+    const testing = std.testing;
+
+    try testing.expect(actionCommands(.@"ai:open_panel").len > 0);
+    try testing.expect(actionCommands(.@"ai:handoff_to_agent").len > 0);
+    try testing.expect(actionCommands(.@"ai:propose_command").len > 0);
+    try testing.expect(actionCommands(.@"ai:retry_last").len > 0);
 }
